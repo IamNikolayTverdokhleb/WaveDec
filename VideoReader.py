@@ -24,27 +24,33 @@ class VideoReader:
             self.out = open(read_from, 'a')
 
     def set_instream_mp4(self, read_from):
+        """
+        This method sets up all needed parameters to read video from .mp4
+        """
+
         self.cap = cv2.VideoCapture(read_from)
-        # self.cap = cv2.VideoCapture(0)
+        # self.cap = cv2.VideoCapture(0) # To stream from webcam
 
         # Check if stream opened successfully
         if self.cap.isOpened() == False:
             print("Error opening video stream or file")
 
         # Getting parameters of the video
-        # self.frames_count, self.fps, self.width, self.height = self.cap.get(cv2.CAP_PROP_FRAME_COUNT), \
-        #     self.cap.get(cv2.CAP_PROP_FPS), self.cap.get(cv2.CAP_PROP_FRAME_WIDTH), self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-
         self.amount_of_frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-        # self.fps = 23
         self.frame_width = int(self.cap.get(3))
         self.frame_height = int(self.cap.get(4))
 
     def get_stream_params(self):
-        return (self.amount_of_frames, self.fps, self.frame_width, self.frame_height)
+        """
+        This method returns all parameters of the stream
+        """
+        return self.amount_of_frames, self.fps, self.frame_width, self.frame_height
 
     def set_ofstream(self, mode, write_to):
+        """
+        This method sets up ofstream
+        """
         if mode == "write_mp4_grayscale":
             fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
             self.out = cv2.VideoWriter(write_to, fourcc, self.fps, (self.frame_width, self.frame_height), 0)
@@ -55,9 +61,15 @@ class VideoReader:
             self.out = open(write_to, 'a')
 
     def release_instream(self):
+        """
+        This method kills instream objects
+        """
         self.cap.release()
 
     def release_ofstream(self, mode):
+        """
+        This method kills ofstream objects wrt to the mode
+        """
         self.cap.release()
         if mode == "write_mp4" or mode == "write_mp4_grayscale":
             self.out.release()
@@ -65,9 +77,15 @@ class VideoReader:
             self.out.close()
 
     def write_frame_mp4(self, frame):
+        """
+        This method writes a frame into mp4 file
+        """
         self.out.write(frame)
 
     def write_frame_txt(self, frame):
+        """
+        This method writes a frame into txt file
+        """
         # I'm writing a header here just for the sake of readability
         # Any line starting with "#" will be ignored by numpy.loadtxt
         self.out.write('# Array shape: {0}\n'.format(frame.shape))
