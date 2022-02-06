@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-
+import re
+from scipy.sparse import csr_matrix
+import ast
 
 class VideoReader:
     def __init__(self):
@@ -21,7 +22,7 @@ class VideoReader:
             self.set_instream_mp4(read_from)
         else:
             print("Reading from .txt")
-            self.out = open(read_from, 'a')
+            self.fin = open(read_from, 'r')
 
     def set_instream_mp4(self, read_from):
         """
@@ -51,6 +52,7 @@ class VideoReader:
         """
         This method sets up ofstream
         """
+        self.write_to = write_to
         if mode == "write_mp4_grayscale":
             fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
             self.out = cv2.VideoWriter(write_to, fourcc, self.fps, (self.frame_width, self.frame_height), 0)
@@ -58,19 +60,19 @@ class VideoReader:
             fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
             self.out = cv2.VideoWriter(write_to, fourcc, self.fps, (self.frame_width, self.frame_height))
         elif "write_txt":
-            self.out = open(write_to, 'a')
+            self.out = open(write_to, 'w')
 
     def release_instream(self):
         """
         This method kills instream objects
         """
         self.cap.release()
+        #self.fin.close()
 
     def release_ofstream(self, mode):
         """
         This method kills ofstream objects wrt to the mode
         """
-        self.cap.release()
         if mode == "write_mp4" or mode == "write_mp4_grayscale":
             self.out.release()
         elif "write_txt":
@@ -82,24 +84,48 @@ class VideoReader:
         """
         self.out.write(frame)
 
-    def write_frame_txt(self, frame):
+    def write_frame_txt(self, frame, index=None):
         """
         This method writes a frame into txt file
         """
-        # I'm writing a header here just for the sake of readability
-        # Any line starting with "#" will be ignored by numpy.loadtxt
+        self.out.write('# Frame number {0}\n'.format(index))
         self.out.write('# Array shape: {0}\n'.format(frame.shape))
 
-        # Iterating through a ndimensional array produces slices along
-        # the last axis. This is equivalent to data[i,:,:] in this case
         for data_slice in frame:
-            # The formatting string indicates that I'm writing out
-            # the values in left-justified columns 7 characters in width
-            # with 2 decimal places.
             np.savetxt(self.out, data_slice, fmt='%-7.1f')
+        self.out.write('# End of frame\n')
 
-            # Writing out a break to indicate different slices...
-            self.out.write('# New slice\n')
+    def write_dense_coeffs_txt(self, composed_coeffs, slices, index=None):
+        """
+        This method dense coefficients and slices to the txt file
+        """
+        self.out.write('# Dense frame number {0}\n'.format(index))
+        self.out.write('# Coefficients array shape: {0}\n'.format(composed_coeffs.shape))
+        for data_slice in composed_coeffs:
+            np.savetxt(self.out, data_slice, fmt='%-7.1f')
+        self.out.write('\n# End of coefficients array\n')
+
+        self.out.write('# Slices\n')
+        for item in slices:
+            self.out.write("{}\n".format(item))
+        self.out.write('# End of slices\n')
+        self.out.write('# End of frame\n')
+
+    def write_sparse_coeffs_txt(self, composed_coeffs, slices, index=None):
+        """
+        This method sparse coefficients and slices to the txt file
+        """
+        self.out.write('# Sparse frame number {0}\n'.format(index))
+        self.out.write('# Coefficients array shape: {0}\n'.format(composed_coeffs.shape))
+        composed_coeffs.maxprint = composed_coeffs.count_nonzero()
+        self.out.write(str(composed_coeffs))
+        self.out.write('\n# End of coefficients array\n')
+
+        self.out.write('# Slices\n')
+        for item in slices:
+            self.out.write("{}\n".format(item))
+        self.out.write('# End of slices\n')
+        self.out.write('# End of frame\n')
 
     def process_all_txtframes(self):
         print("To be done")
@@ -171,3 +197,57 @@ class VideoReader:
 
         if mode == "return_grayscale":
             return storage
+
+    def write_header(self, number):
+        self.out.write('# Total number of frames {0}\n'.format(number))
+
+    def read_header(self):
+        line = self.fin.readline()
+        return int(re.findall(r'\d+', line)[0])
+
+    def read_sparse_txt_frame(self):
+        line = self.fin.readline()
+        data = []
+        row = []
+        col = []
+        slices = []
+        end_state = False
+        while line:
+            line = self.fin.readline()
+            # Read sparse coefficients
+            if line.find("# Coefficients array shape:") != -1:
+                # print("Read sparse coefficients")
+                shape1 = int(re.findall(r'\d+', line)[0])
+                shape2 = int(re.findall(r'\d+', line)[1])
+                bool = True
+                while bool:
+                    line = self.fin.readline()
+                    if line.find("# End of coefficients array") != -1:
+                        bool = False
+                    else:
+                        str = re.findall(r'\d+', line)
+                        row.append(int(str[0]))
+                        col.append(int(str[1]))
+                        data.append(float(str[2] + '.' + str[3]))
+                        if line.find("-") != -1:
+                            data[-1] = -data[-1]
+
+            # Read slices
+            elif line.find("# Slices") != -1:
+                # print("Read slices")
+                bool_slices = True
+                while bool_slices:
+                    line = self.fin.readline()
+                    if line.find("# End of slices") != -1:
+                        bool_slices = False
+                        end_state = True
+                    else:
+                        slices.append(eval(line.strip("\n")))
+            # Done with the frame
+            elif end_state:
+                break
+        # print('Retrieved matrix shape: {0} {1}\n'.format(shape1, shape2))
+        # creating sparse matrix
+        sparseMatrix = csr_matrix((data, (row, col)),
+                                  shape=(shape1, shape2), dtype=np.float).toarray()
+        return sparseMatrix, slices
